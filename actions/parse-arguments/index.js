@@ -10,17 +10,18 @@ async function run() {
     // You can also pass in additional options as a second parameter to getOctokit
     // const octokit = github.getOctokit(myToken, {userAgent: "MyActionVersion1"});
     console.log(JSON.stringify(github.context, null, 4))
-    const { data: pullRequest } = await octokit.rest.pulls.get({
-        owner: 'octokit',
-        repo: 'rest.js',
-        pull_number: 123,
-        mediaType: {
-          format: 'diff'
-        }
+
+    owner = github.context.repository_owner
+    repo = github.context.repository
+    pull_number = github.context.issue.number
+
+    const data = await octokit.rest.pulls.listCommentsForReview({
+      owner,
+      repo,
+      pull_number,
     });
 
-    console.log(pullRequest);
-
+    console.log(JSON.stringify(data, null, 4))
 
   } catch (error) {
     core.setFailed(error.message);
