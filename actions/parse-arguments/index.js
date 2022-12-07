@@ -21,6 +21,14 @@ async function run() {
 
     console.log("owner", owner, "repo", repo, "pull_number", pull_number)
 
+    const comments = octokit.rest.pulls.listReviewComments({
+      owner,
+      repo,
+      pull_number,
+    });
+
+    console.log(JSON.stringify(comments, null, 4))
+
     const otherData = octokit.rest.pulls.listReviewComments({
       owner,
       repo,
