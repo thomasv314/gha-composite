@@ -4,6 +4,13 @@ inputs:
   github-token:
     description: 'token'
     required: true
+  command-prefix:
+    description: 'Prefix of the command.'
+    required: true
+    default: '/build'
+  command-options:
+    description: "JSON string of the parseArgs options (https://github.com/pkgjs/parseargs)"
+    default: '{ "foo": { "type": "boolean", "short"  : "f" }, "bar": { "type": "string" } }'
 outputs: {}
 runs:
   using: 'node16'

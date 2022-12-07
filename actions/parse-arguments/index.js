@@ -1,9 +1,18 @@
 const github = require('@actions/github');
 const core = require('@actions/core');
-
+const { parseArgs } = require('node:util');
 
 // most @actions toolkit packages have async methods
 async function run() {
+  try {
+    const commandPrefix = core.getInput('command-prefix')
+    const commandOptsString = core.getInput('command-options')
+    const commandOpts = JSON.parse(commandOptsString)
+  } catch (error) {
+    core.error(`Failed to parse command options: ${commandOptsString}`)
+    core.setFailed(error.message);
+  }
+
   try {
     const token = core.getInput('github-token');
     const octokit = github.getOctokit(token)
@@ -26,8 +35,16 @@ async function run() {
     });
 
     console.log(JSON.stringify(comments, null, 4))
+
     for (var i = 0; i < comments.length; i++) {
-      console.log("COMMENT", comments[i]["body"], comments[i]["created_at"])
+      const body = comments[i]["body"].replace(/(\r\n|\n|\r)/gm, "")
+      const created = comments[i]["created_at"]
+      if (body.startsWith(commandPrefix)) {
+        const { values, positionals } = parseArgs({ args, options });
+        console.log("COMMENT STARTS WITH:", body, created)
+      } else {
+        console.log("COMMENT DOESNT START WITH PREFIX", body, created)
+      }
     }
   } catch (error) {
     core.setFailed(error.message);
