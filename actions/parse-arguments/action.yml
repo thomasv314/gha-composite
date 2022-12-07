@@ -1,0 +1,14 @@
+name: 'Parse Arguments'
+description: 'Parse some arguments'
+inputs:
+  github-token:
+    required: true
+    description: "Github PAT"
+  command-prefix:
+    required: true
+    default: "/build"
+    description: "Command prefix"
+outputs:
+runs:
+  using: 'node16'
+  main: 'dist/parse-arguments/index.js'
