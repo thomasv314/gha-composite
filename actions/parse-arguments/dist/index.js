@@ -10673,22 +10673,6 @@ async function run() {
 
     console.log(JSON.stringify(comments, null, 4))
 
-    const otherData = octokit.rest.pulls.listReviewComments({
-      owner,
-      repo,
-      pull_number,
-    });
-
-    console.log(JSON.stringify(otherData, null, 4))
-
-    const data = await octokit.rest.pulls.listCommentsForReview({
-      owner,
-      repo,
-      pull_number,
-    });
-
-    console.log(JSON.stringify(data, null, 4))
-
   } catch (error) {
     core.setFailed(error.message);
   }
