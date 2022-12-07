@@ -19,14 +19,16 @@ async function run() {
 
     issue_number = github.context.issue.number
 
-    const comments = await octokit.rest.issues.listComments({
+    const { data: comments } = await octokit.rest.issues.listComments({
       owner,
       repo,
       issue_number,
     });
 
     console.log(JSON.stringify(comments, null, 4))
-
+    for (var i = 0; i < comments.length; i++) {
+      console.log("COMMENT", comments[i]["body"], comments[i]["created_at"])
+    }
   } catch (error) {
     core.setFailed(error.message);
   }
