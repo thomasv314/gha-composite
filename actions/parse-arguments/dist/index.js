@@ -10667,7 +10667,7 @@ async function run() {
 
     console.log("owner", owner, "repo", repo, "pull_number", pull_number)
 
-    const comments = octokit.rest.pulls.listComments({
+    const comments = octokit.rest.issues.listComments({
       owner,
       repo,
       pull_number,
