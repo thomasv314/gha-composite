@@ -10659,17 +10659,11 @@ const { parseArgs } = __nccwpck_require__(9147);
 // most @actions toolkit packages have async methods
 async function run() {
   try {
+    const token = core.getInput('github-token');
+    const octokit = github.getOctokit(token)
     const commandPrefix = core.getInput('command-prefix')
     const commandOptsString = core.getInput('command-options')
     const commandOpts = JSON.parse(commandOptsString)
-  } catch (error) {
-    core.error(`Failed to parse command options: ${commandOptsString}`)
-    core.setFailed(error.message);
-  }
-
-  try {
-    const token = core.getInput('github-token');
-    const octokit = github.getOctokit(token)
     // You can also pass in additional options as a second parameter to getOctokit
     // const octokit = github.getOctokit(myToken, {userAgent: "MyActionVersion1"});
     owner = github.context.repo.owner
