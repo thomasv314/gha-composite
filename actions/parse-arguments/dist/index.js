@@ -10663,14 +10663,14 @@ async function run() {
     owner = github.context.repo.owner
     repo = github.context.repo.repo
 
-    pull_number = github.context.issue.number
+    issue_number = github.context.issue.number
 
     console.log("owner", owner, "repo", repo, "pull_number", pull_number)
 
     const comments = octokit.rest.issues.listComments({
       owner,
       repo,
-      pull_number,
+      issue_number,
     });
 
     console.log(JSON.stringify(comments, null, 4))
