@@ -15,7 +15,7 @@ async function run() {
     console.log("CONTEXT", github.context.repo)
 
     owner = github.context.repo.owner
-    repo = github.context.repo.name
+    repo = github.context.repo.repo
 
     pull_number = github.context.issue.number
 
