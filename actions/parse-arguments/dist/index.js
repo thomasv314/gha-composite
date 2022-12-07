@@ -10657,8 +10657,8 @@ async function run() {
     // const octokit = github.getOctokit(myToken, {userAgent: "MyActionVersion1"});
     console.log(JSON.stringify(github.context, null, 4))
 
-    owner = github.context.repository_owner
-    repo = github.context.repository
+    owner = github.context.repository.owner.login
+    repo = github.context.repository.name
     pull_number = github.context.issue.number
 
     const data = await octokit.rest.pulls.listCommentsForReview({
