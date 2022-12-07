@@ -10660,14 +10660,15 @@ async function run() {
 
     console.log("CONTEXT", github.context.repo)
 
-    owner = "leaflink"
-    repo = github.context.repository.name
+    owner = github.context.repo.owner
+    repo = github.context.repo.name
+
     pull_number = github.context.issue.number
 
     console.log("owner", owner, "repo", repo, "pull_number", pull_number)
     const data = await octokit.rest.pulls.listCommentsForReview({
-      owner: github,
-      repo: github.context.repo,
+      owner,
+      repo,
       pull_number,
     });
 
