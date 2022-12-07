@@ -1,14 +1,13 @@
-name: 'Parse Arguments'
-description: 'Parse some arguments'
+name: 'Wait'
+description: 'Wait a designated number of milliseconds'
 inputs:
-  github-token:
+  milliseconds:  # id of input
+    description: 'number of milliseconds to wait'
     required: true
-    description: "Github PAT"
-  command-prefix:
-    required: true
-    default: "/build"
-    description: "Command prefix"
-outputs: {}
+    default: '1000'
+outputs:
+  time: # output will be available to future steps
+    description: 'The current time after waiting'
 runs:
   using: 'node16'
-  main: './dist/index.js'
+  main: 'dist/index.js'
