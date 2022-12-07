@@ -18,14 +18,8 @@ async function run() {
     const octokit = github.getOctokit(token)
     // You can also pass in additional options as a second parameter to getOctokit
     // const octokit = github.getOctokit(myToken, {userAgent: "MyActionVersion1"});
-
-    console.log(JSON.stringify(github.context.payload, null, 4))
-
-    console.log("CONTEXT", github.context.repo)
-
     owner = github.context.repo.owner
     repo = github.context.repo.repo
-
     issue_number = github.context.issue.number
 
     const { data: comments } = await octokit.rest.issues.listComments({
@@ -40,11 +34,14 @@ async function run() {
       const body = comments[i]["body"].replace(/(\r\n|\n|\r)/gm, "")
       const created = comments[i]["created_at"]
       if (body.startsWith(commandPrefix)) {
-        const { values, positionals } = parseArgs({ args, options });
+        const args = body.replace(commandPrefix, "").split(" ")
+        const { values, positionals } = parseArgs({ args, commandOpts });
         console.log("COMMENT STARTS WITH:", body, created)
+        console.log("VALUES", value, "POSITIONALS", positionals)
       } else {
         console.log("COMMENT DOESNT START WITH PREFIX", body, created)
       }
+      console.log("---")
     }
   } catch (error) {
     core.setFailed(error.message);
