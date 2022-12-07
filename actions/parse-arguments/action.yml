@@ -11,4 +11,4 @@ inputs:
 outputs: {}
 runs:
   using: 'node16'
-  main: 'dist/parse-arguments/index.js'
+  main: './dist/index.js'
