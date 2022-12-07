@@ -10666,6 +10666,15 @@ async function run() {
     pull_number = github.context.issue.number
 
     console.log("owner", owner, "repo", repo, "pull_number", pull_number)
+
+    const otherData = octokit.rest.pulls.listReviewComments({
+      owner,
+      repo,
+      pull_number,
+    });
+
+    console.log(JSON.stringify(otherData, null, 4))
+
     const data = await octokit.rest.pulls.listCommentsForReview({
       owner,
       repo,
