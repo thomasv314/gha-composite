@@ -22,7 +22,7 @@ async function run() {
       issue_number,
     });
 
-    console.log(JSON.stringify(comments, null, 4))
+//    console.log(JSON.stringify(comments, null, 4))
 
     for (var i = 0; i < comments.length; i++) {
       const body = comments[i]["body"].replace(/(\r\n|\n|\r)/gm, "")
