@@ -10,7 +10,7 @@ inputs:
     default: '/build'
   command-options:
     description: "JSON string of the parseArgs options (https://github.com/pkgjs/parseargs)"
-    default: '{ "env": { "type": "string"  }, "refresh-db": { "type": "bool" } }'
+    default: '{ "env": { "type": "string"  }, "refresh-db": { "type": "boolean" } }'
 outputs: {}
 runs:
   using: 'node16'
