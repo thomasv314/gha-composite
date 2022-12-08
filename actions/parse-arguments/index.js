@@ -39,7 +39,7 @@ async function run() {
       const created = comments[i]["created_at"]
       if (body.startsWith(commandPrefix)) {
         const args = body.replace(commandPrefix, "").split(" ")
-        const { values, positionals } = parseArgs({ args, commandOpts, allowPositionals: true });
+        const { values, positionals } = parseArgs({ args, options: commandOpts, allowPositionals: true });
         console.log("COMMENT STARTS WITH:", body, created)
         console.log(`ARGS:  ${args}`)
         console.log("VALUES", values, "POSITIONALS", positionals)
