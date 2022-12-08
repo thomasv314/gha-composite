@@ -1762,7 +1762,7 @@ exports.checkBypass = checkBypass;
 
 /***/ }),
 
-/***/ 290:
+/***/ 8714:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -1783,7 +1783,7 @@ const {
   StringPrototypeIndexOf,
   StringPrototypeSlice,
   StringPrototypeStartsWith,
-} = __nccwpck_require__(3720);
+} = __nccwpck_require__(7307);
 
 const {
   validateArray,
@@ -1793,11 +1793,11 @@ const {
   validateString,
   validateStringArray,
   validateUnion,
-} = __nccwpck_require__(8168);
+} = __nccwpck_require__(4923);
 
 const {
   kEmptyObject,
-} = __nccwpck_require__(895);
+} = __nccwpck_require__(5136);
 
 const {
   findLongOptionForShort,
@@ -1811,7 +1811,7 @@ const {
   useDefaultValueOption,
   objectGetOwn,
   optionsGetOwn,
-} = __nccwpck_require__(3115);
+} = __nccwpck_require__(7328);
 
 const {
   codes: {
@@ -1820,7 +1820,7 @@ const {
     ERR_PARSE_ARGS_UNKNOWN_OPTION,
     ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL,
   },
-} = __nccwpck_require__(8509);
+} = __nccwpck_require__(3147);
 
 function getMainArgs() {
   // Work out where to slice process.argv for user supplied arguments.
@@ -2166,7 +2166,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 8509:
+/***/ 3147:
 /***/ ((module) => {
 
 "use strict";
@@ -2221,7 +2221,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 3720:
+/***/ 7307:
 /***/ ((module) => {
 
 "use strict";
@@ -2622,7 +2622,7 @@ module.exports = primordials;
 
 /***/ }),
 
-/***/ 895:
+/***/ 5136:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -2633,7 +2633,7 @@ module.exports = primordials;
 const {
   ObjectCreate,
   ObjectFreeze,
-} = __nccwpck_require__(3720);
+} = __nccwpck_require__(7307);
 
 const kEmptyObject = ObjectFreeze(ObjectCreate(null));
 
@@ -2644,7 +2644,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 8168:
+/***/ 4923:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -2659,13 +2659,13 @@ const {
   ArrayIsArray,
   ArrayPrototypeIncludes,
   ArrayPrototypeJoin,
-} = __nccwpck_require__(3720);
+} = __nccwpck_require__(7307);
 
 const {
   codes: {
     ERR_INVALID_ARG_TYPE
   }
-} = __nccwpck_require__(8509);
+} = __nccwpck_require__(3147);
 
 function validateString(value, name) {
   if (typeof value !== 'string') {
@@ -2741,7 +2741,7 @@ module.exports = {
 
 /***/ }),
 
-/***/ 3115:
+/***/ 7328:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
 "use strict";
@@ -2754,11 +2754,11 @@ const {
   StringPrototypeCharAt,
   StringPrototypeIncludes,
   StringPrototypeStartsWith,
-} = __nccwpck_require__(3720);
+} = __nccwpck_require__(7307);
 
 const {
   validateObject,
-} = __nccwpck_require__(8168);
+} = __nccwpck_require__(4923);
 
 // These are internal utilities to make the parsing logic easier to read, and
 // add lots of detail for the curious. They are in a separate file to allow
@@ -11831,16 +11831,24 @@ var __webpack_exports__ = {};
 (() => {
 const github = __nccwpck_require__(4947);
 const core = __nccwpck_require__(2186);
-const { parseArgs } = __nccwpck_require__(290)
+const { parseArgs } = __nccwpck_require__(8714);
 
 // most @actions toolkit packages have async methods
 async function run() {
+  const commandPrefix = core.getInput('command-prefix')
+  const commandOptsString = core.getInput('command-options')
+  let commandOpts
+
+  try {
+    commandOpts = JSON.parse(commandOptsString)
+  } catch (error) {
+    core.error(`Failed to parse command options: ${commandOptsString}`)
+    core.setFailed(error.message);
+  }
+
   try {
     const token = core.getInput('github-token');
     const octokit = github.getOctokit(token)
-    const commandPrefix = core.getInput('command-prefix')
-    const commandOptsString = core.getInput('command-options')
-    const commandOpts = JSON.parse(commandOptsString)
     // You can also pass in additional options as a second parameter to getOctokit
     // const octokit = github.getOctokit(myToken, {userAgent: "MyActionVersion1"});
     owner = github.context.repo.owner
@@ -11853,14 +11861,14 @@ async function run() {
       issue_number,
     });
 
-//    console.log(JSON.stringify(comments, null, 4))
+    console.log(JSON.stringify(comments, null, 4))
 
     for (var i = 0; i < comments.length; i++) {
       const body = comments[i]["body"].replace(/(\r\n|\n|\r)/gm, "")
       const created = comments[i]["created_at"]
       if (body.startsWith(commandPrefix)) {
         const args = body.replace(commandPrefix, "").split(" ")
-        const { values, positionals } = parseArgs({ args, commandOpts });
+        const { values, positionals } = parseArgs({ args, commandOpts, allowPositionals: true });
         console.log("COMMENT STARTS WITH:", body, created)
         console.log("VALUES", value, "POSITIONALS", positionals)
       } else {
