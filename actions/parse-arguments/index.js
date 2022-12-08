@@ -51,9 +51,11 @@ async function run() {
       console.log("COMMENT STARTS WITH:", body, created)
       console.log(`ARGS:  ${args}`)
       console.log("VALUES", values, "POSITIONALS", positionals)
+    } else {
+      console.log(`Searched ${comments.length} comments and found no strings starting with ${commandPrefix}`)
     }
   } catch (error) {
-    core.setFailed(error.message);
+    core.setFailed(error.message)
   }
 }
 
