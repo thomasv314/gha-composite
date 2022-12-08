@@ -39,7 +39,7 @@ async function run() {
         const args = body.replace(commandPrefix, "").split(" ")
         const { values, positionals } = parseArgs({ args, commandOpts, allowPositionals: true });
         console.log("COMMENT STARTS WITH:", body, created)
-        console.log("VALUES", value, "POSITIONALS", positionals)
+        console.log("VALUES", values, "POSITIONALS", positionals)
       } else {
         console.log("COMMENT DOESNT START WITH PREFIX", body, created)
       }
