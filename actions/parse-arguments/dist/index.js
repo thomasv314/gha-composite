@@ -1762,6 +1762,1191 @@ exports.checkBypass = checkBypass;
 
 /***/ }),
 
+/***/ 290:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const {
+  ArrayPrototypeForEach,
+  ArrayPrototypeIncludes,
+  ArrayPrototypeMap,
+  ArrayPrototypePush,
+  ArrayPrototypePushApply,
+  ArrayPrototypeShift,
+  ArrayPrototypeSlice,
+  ArrayPrototypeUnshiftApply,
+  ObjectEntries,
+  ObjectPrototypeHasOwnProperty: ObjectHasOwn,
+  StringPrototypeCharAt,
+  StringPrototypeIndexOf,
+  StringPrototypeSlice,
+  StringPrototypeStartsWith,
+} = __nccwpck_require__(3720);
+
+const {
+  validateArray,
+  validateBoolean,
+  validateBooleanArray,
+  validateObject,
+  validateString,
+  validateStringArray,
+  validateUnion,
+} = __nccwpck_require__(8168);
+
+const {
+  kEmptyObject,
+} = __nccwpck_require__(895);
+
+const {
+  findLongOptionForShort,
+  isLoneLongOption,
+  isLoneShortOption,
+  isLongOptionAndValue,
+  isOptionValue,
+  isOptionLikeValue,
+  isShortOptionAndValue,
+  isShortOptionGroup,
+  useDefaultValueOption,
+  objectGetOwn,
+  optionsGetOwn,
+} = __nccwpck_require__(3115);
+
+const {
+  codes: {
+    ERR_INVALID_ARG_VALUE,
+    ERR_PARSE_ARGS_INVALID_OPTION_VALUE,
+    ERR_PARSE_ARGS_UNKNOWN_OPTION,
+    ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL,
+  },
+} = __nccwpck_require__(8509);
+
+function getMainArgs() {
+  // Work out where to slice process.argv for user supplied arguments.
+
+  // Check node options for scenarios where user CLI args follow executable.
+  const execArgv = process.execArgv;
+  if (ArrayPrototypeIncludes(execArgv, '-e') ||
+      ArrayPrototypeIncludes(execArgv, '--eval') ||
+      ArrayPrototypeIncludes(execArgv, '-p') ||
+      ArrayPrototypeIncludes(execArgv, '--print')) {
+    return ArrayPrototypeSlice(process.argv, 1);
+  }
+
+  // Normally first two arguments are executable and script, then CLI arguments
+  return ArrayPrototypeSlice(process.argv, 2);
+}
+
+/**
+ * In strict mode, throw for possible usage errors like --foo --bar
+ *
+ * @param {object} token - from tokens as available from parseArgs
+ */
+function checkOptionLikeValue(token) {
+  if (!token.inlineValue && isOptionLikeValue(token.value)) {
+    // Only show short example if user used short option.
+    const example = StringPrototypeStartsWith(token.rawName, '--') ?
+      `'${token.rawName}=-XYZ'` :
+      `'--${token.name}=-XYZ' or '${token.rawName}-XYZ'`;
+    const errorMessage = `Option '${token.rawName}' argument is ambiguous.
+Did you forget to specify the option argument for '${token.rawName}'?
+To specify an option argument starting with a dash use ${example}.`;
+    throw new ERR_PARSE_ARGS_INVALID_OPTION_VALUE(errorMessage);
+  }
+}
+
+/**
+ * In strict mode, throw for usage errors.
+ *
+ * @param {object} config - from config passed to parseArgs
+ * @param {object} token - from tokens as available from parseArgs
+ */
+function checkOptionUsage(config, token) {
+  if (!ObjectHasOwn(config.options, token.name)) {
+    throw new ERR_PARSE_ARGS_UNKNOWN_OPTION(
+      token.rawName, config.allowPositionals);
+  }
+
+  const short = optionsGetOwn(config.options, token.name, 'short');
+  const shortAndLong = `${short ? `-${short}, ` : ''}--${token.name}`;
+  const type = optionsGetOwn(config.options, token.name, 'type');
+  if (type === 'string' && typeof token.value !== 'string') {
+    throw new ERR_PARSE_ARGS_INVALID_OPTION_VALUE(`Option '${shortAndLong} <value>' argument missing`);
+  }
+  // (Idiomatic test for undefined||null, expecting undefined.)
+  if (type === 'boolean' && token.value != null) {
+    throw new ERR_PARSE_ARGS_INVALID_OPTION_VALUE(`Option '${shortAndLong}' does not take an argument`);
+  }
+}
+
+
+/**
+ * Store the option value in `values`.
+ *
+ * @param {string} longOption - long option name e.g. 'foo'
+ * @param {string|undefined} optionValue - value from user args
+ * @param {object} options - option configs, from parseArgs({ options })
+ * @param {object} values - option values returned in `values` by parseArgs
+ */
+function storeOption(longOption, optionValue, options, values) {
+  if (longOption === '__proto__') {
+    return; // No. Just no.
+  }
+
+  // We store based on the option value rather than option type,
+  // preserving the users intent for author to deal with.
+  const newValue = optionValue ?? true;
+  if (optionsGetOwn(options, longOption, 'multiple')) {
+    // Always store value in array, including for boolean.
+    // values[longOption] starts out not present,
+    // first value is added as new array [newValue],
+    // subsequent values are pushed to existing array.
+    // (note: values has null prototype, so simpler usage)
+    if (values[longOption]) {
+      ArrayPrototypePush(values[longOption], newValue);
+    } else {
+      values[longOption] = [newValue];
+    }
+  } else {
+    values[longOption] = newValue;
+  }
+}
+
+/**
+ * Store the default option value in `values`.
+ *
+ * @param {string} longOption - long option name e.g. 'foo'
+ * @param {string
+ *         | boolean
+ *         | string[]
+ *         | boolean[]} optionValue - default value from option config
+ * @param {object} values - option values returned in `values` by parseArgs
+ */
+function storeDefaultOption(longOption, optionValue, values) {
+  if (longOption === '__proto__') {
+    return; // No. Just no.
+  }
+
+  values[longOption] = optionValue;
+}
+
+/**
+ * Process args and turn into identified tokens:
+ * - option (along with value, if any)
+ * - positional
+ * - option-terminator
+ *
+ * @param {string[]} args - from parseArgs({ args }) or mainArgs
+ * @param {object} options - option configs, from parseArgs({ options })
+ */
+function argsToTokens(args, options) {
+  const tokens = [];
+  let index = -1;
+  let groupCount = 0;
+
+  const remainingArgs = ArrayPrototypeSlice(args);
+  while (remainingArgs.length > 0) {
+    const arg = ArrayPrototypeShift(remainingArgs);
+    const nextArg = remainingArgs[0];
+    if (groupCount > 0)
+      groupCount--;
+    else
+      index++;
+
+    // Check if `arg` is an options terminator.
+    // Guideline 10 in https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html
+    if (arg === '--') {
+      // Everything after a bare '--' is considered a positional argument.
+      ArrayPrototypePush(tokens, { kind: 'option-terminator', index });
+      ArrayPrototypePushApply(
+        tokens, ArrayPrototypeMap(remainingArgs, (arg) => {
+          return { kind: 'positional', index: ++index, value: arg };
+        })
+      );
+      break; // Finished processing args, leave while loop.
+    }
+
+    if (isLoneShortOption(arg)) {
+      // e.g. '-f'
+      const shortOption = StringPrototypeCharAt(arg, 1);
+      const longOption = findLongOptionForShort(shortOption, options);
+      let value;
+      let inlineValue;
+      if (optionsGetOwn(options, longOption, 'type') === 'string' &&
+          isOptionValue(nextArg)) {
+        // e.g. '-f', 'bar'
+        value = ArrayPrototypeShift(remainingArgs);
+        inlineValue = false;
+      }
+      ArrayPrototypePush(
+        tokens,
+        { kind: 'option', name: longOption, rawName: arg,
+          index, value, inlineValue });
+      if (value != null) ++index;
+      continue;
+    }
+
+    if (isShortOptionGroup(arg, options)) {
+      // Expand -fXzy to -f -X -z -y
+      const expanded = [];
+      for (let index = 1; index < arg.length; index++) {
+        const shortOption = StringPrototypeCharAt(arg, index);
+        const longOption = findLongOptionForShort(shortOption, options);
+        if (optionsGetOwn(options, longOption, 'type') !== 'string' ||
+          index === arg.length - 1) {
+          // Boolean option, or last short in group. Well formed.
+          ArrayPrototypePush(expanded, `-${shortOption}`);
+        } else {
+          // String option in middle. Yuck.
+          // Expand -abfFILE to -a -b -fFILE
+          ArrayPrototypePush(expanded, `-${StringPrototypeSlice(arg, index)}`);
+          break; // finished short group
+        }
+      }
+      ArrayPrototypeUnshiftApply(remainingArgs, expanded);
+      groupCount = expanded.length;
+      continue;
+    }
+
+    if (isShortOptionAndValue(arg, options)) {
+      // e.g. -fFILE
+      const shortOption = StringPrototypeCharAt(arg, 1);
+      const longOption = findLongOptionForShort(shortOption, options);
+      const value = StringPrototypeSlice(arg, 2);
+      ArrayPrototypePush(
+        tokens,
+        { kind: 'option', name: longOption, rawName: `-${shortOption}`,
+          index, value, inlineValue: true });
+      continue;
+    }
+
+    if (isLoneLongOption(arg)) {
+      // e.g. '--foo'
+      const longOption = StringPrototypeSlice(arg, 2);
+      let value;
+      let inlineValue;
+      if (optionsGetOwn(options, longOption, 'type') === 'string' &&
+          isOptionValue(nextArg)) {
+        // e.g. '--foo', 'bar'
+        value = ArrayPrototypeShift(remainingArgs);
+        inlineValue = false;
+      }
+      ArrayPrototypePush(
+        tokens,
+        { kind: 'option', name: longOption, rawName: arg,
+          index, value, inlineValue });
+      if (value != null) ++index;
+      continue;
+    }
+
+    if (isLongOptionAndValue(arg)) {
+      // e.g. --foo=bar
+      const equalIndex = StringPrototypeIndexOf(arg, '=');
+      const longOption = StringPrototypeSlice(arg, 2, equalIndex);
+      const value = StringPrototypeSlice(arg, equalIndex + 1);
+      ArrayPrototypePush(
+        tokens,
+        { kind: 'option', name: longOption, rawName: `--${longOption}`,
+          index, value, inlineValue: true });
+      continue;
+    }
+
+    ArrayPrototypePush(tokens, { kind: 'positional', index, value: arg });
+  }
+
+  return tokens;
+}
+
+const parseArgs = (config = kEmptyObject) => {
+  const args = objectGetOwn(config, 'args') ?? getMainArgs();
+  const strict = objectGetOwn(config, 'strict') ?? true;
+  const allowPositionals = objectGetOwn(config, 'allowPositionals') ?? !strict;
+  const returnTokens = objectGetOwn(config, 'tokens') ?? false;
+  const options = objectGetOwn(config, 'options') ?? { __proto__: null };
+  // Bundle these up for passing to strict-mode checks.
+  const parseConfig = { args, strict, options, allowPositionals };
+
+  // Validate input configuration.
+  validateArray(args, 'args');
+  validateBoolean(strict, 'strict');
+  validateBoolean(allowPositionals, 'allowPositionals');
+  validateBoolean(returnTokens, 'tokens');
+  validateObject(options, 'options');
+  ArrayPrototypeForEach(
+    ObjectEntries(options),
+    ({ 0: longOption, 1: optionConfig }) => {
+      validateObject(optionConfig, `options.${longOption}`);
+
+      // type is required
+      const optionType = objectGetOwn(optionConfig, 'type');
+      validateUnion(optionType, `options.${longOption}.type`, ['string', 'boolean']);
+
+      if (ObjectHasOwn(optionConfig, 'short')) {
+        const shortOption = optionConfig.short;
+        validateString(shortOption, `options.${longOption}.short`);
+        if (shortOption.length !== 1) {
+          throw new ERR_INVALID_ARG_VALUE(
+            `options.${longOption}.short`,
+            shortOption,
+            'must be a single character'
+          );
+        }
+      }
+
+      const multipleOption = objectGetOwn(optionConfig, 'multiple');
+      if (ObjectHasOwn(optionConfig, 'multiple')) {
+        validateBoolean(multipleOption, `options.${longOption}.multiple`);
+      }
+
+      const defaultValue = objectGetOwn(optionConfig, 'default');
+      if (defaultValue !== undefined) {
+        let validator;
+        switch (optionType) {
+          case 'string':
+            validator = multipleOption ? validateStringArray : validateString;
+            break;
+
+          case 'boolean':
+            validator = multipleOption ? validateBooleanArray : validateBoolean;
+            break;
+        }
+        validator(defaultValue, `options.${longOption}.default`);
+      }
+    }
+  );
+
+  // Phase 1: identify tokens
+  const tokens = argsToTokens(args, options);
+
+  // Phase 2: process tokens into parsed option values and positionals
+  const result = {
+    values: { __proto__: null },
+    positionals: [],
+  };
+  if (returnTokens) {
+    result.tokens = tokens;
+  }
+  ArrayPrototypeForEach(tokens, (token) => {
+    if (token.kind === 'option') {
+      if (strict) {
+        checkOptionUsage(parseConfig, token);
+        checkOptionLikeValue(token);
+      }
+      storeOption(token.name, token.value, options, result.values);
+    } else if (token.kind === 'positional') {
+      if (!allowPositionals) {
+        throw new ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL(token.value);
+      }
+      ArrayPrototypePush(result.positionals, token.value);
+    }
+  });
+
+  // Phase 3: fill in default values for missing args
+  ArrayPrototypeForEach(ObjectEntries(options), ({ 0: longOption,
+                                                   1: optionConfig }) => {
+    const mustSetDefault = useDefaultValueOption(longOption,
+                                                 optionConfig,
+                                                 result.values);
+    if (mustSetDefault) {
+      storeDefaultOption(longOption,
+                         objectGetOwn(optionConfig, 'default'),
+                         result.values);
+    }
+  });
+
+
+  return result;
+};
+
+module.exports = {
+  parseArgs,
+};
+
+
+/***/ }),
+
+/***/ 8509:
+/***/ ((module) => {
+
+"use strict";
+
+
+class ERR_INVALID_ARG_TYPE extends TypeError {
+  constructor(name, expected, actual) {
+    super(`${name} must be ${expected} got ${actual}`);
+    this.code = 'ERR_INVALID_ARG_TYPE';
+  }
+}
+
+class ERR_INVALID_ARG_VALUE extends TypeError {
+  constructor(arg1, arg2, expected) {
+    super(`The property ${arg1} ${expected}. Received '${arg2}'`);
+    this.code = 'ERR_INVALID_ARG_VALUE';
+  }
+}
+
+class ERR_PARSE_ARGS_INVALID_OPTION_VALUE extends Error {
+  constructor(message) {
+    super(message);
+    this.code = 'ERR_PARSE_ARGS_INVALID_OPTION_VALUE';
+  }
+}
+
+class ERR_PARSE_ARGS_UNKNOWN_OPTION extends Error {
+  constructor(option, allowPositionals) {
+    const suggestDashDash = allowPositionals ? `. To specify a positional argument starting with a '-', place it at the end of the command after '--', as in '-- ${JSON.stringify(option)}` : '';
+    super(`Unknown option '${option}'${suggestDashDash}`);
+    this.code = 'ERR_PARSE_ARGS_UNKNOWN_OPTION';
+  }
+}
+
+class ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL extends Error {
+  constructor(positional) {
+    super(`Unexpected argument '${positional}'. This command does not take positional arguments`);
+    this.code = 'ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL';
+  }
+}
+
+module.exports = {
+  codes: {
+    ERR_INVALID_ARG_TYPE,
+    ERR_INVALID_ARG_VALUE,
+    ERR_PARSE_ARGS_INVALID_OPTION_VALUE,
+    ERR_PARSE_ARGS_UNKNOWN_OPTION,
+    ERR_PARSE_ARGS_UNEXPECTED_POSITIONAL,
+  }
+};
+
+
+/***/ }),
+
+/***/ 3720:
+/***/ ((module) => {
+
+"use strict";
+/*
+This file is copied from https://github.com/nodejs/node/blob/v14.19.3/lib/internal/per_context/primordials.js
+under the following license:
+
+Copyright Node.js contributors. All rights reserved.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to
+deal in the Software without restriction, including without limitation the
+rights to use, copy, modify, merge, publish, distribute, sublicense, and/or
+sell copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in
+all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+IN THE SOFTWARE.
+*/
+
+
+
+/* eslint-disable node-core/prefer-primordials */
+
+// This file subclasses and stores the JS builtins that come from the VM
+// so that Node.js's builtin modules do not need to later look these up from
+// the global proxy, which can be mutated by users.
+
+// Use of primordials have sometimes a dramatic impact on performance, please
+// benchmark all changes made in performance-sensitive areas of the codebase.
+// See: https://github.com/nodejs/node/pull/38248
+
+const primordials = {};
+
+const {
+  defineProperty: ReflectDefineProperty,
+  getOwnPropertyDescriptor: ReflectGetOwnPropertyDescriptor,
+  ownKeys: ReflectOwnKeys,
+} = Reflect;
+
+// `uncurryThis` is equivalent to `func => Function.prototype.call.bind(func)`.
+// It is using `bind.bind(call)` to avoid using `Function.prototype.bind`
+// and `Function.prototype.call` after it may have been mutated by users.
+const { apply, bind, call } = Function.prototype;
+const uncurryThis = bind.bind(call);
+primordials.uncurryThis = uncurryThis;
+
+// `applyBind` is equivalent to `func => Function.prototype.apply.bind(func)`.
+// It is using `bind.bind(apply)` to avoid using `Function.prototype.bind`
+// and `Function.prototype.apply` after it may have been mutated by users.
+const applyBind = bind.bind(apply);
+primordials.applyBind = applyBind;
+
+// Methods that accept a variable number of arguments, and thus it's useful to
+// also create `${prefix}${key}Apply`, which uses `Function.prototype.apply`,
+// instead of `Function.prototype.call`, and thus doesn't require iterator
+// destructuring.
+const varargsMethods = [
+  // 'ArrayPrototypeConcat' is omitted, because it performs the spread
+  // on its own for arrays and array-likes with a truthy
+  // @@isConcatSpreadable symbol property.
+  'ArrayOf',
+  'ArrayPrototypePush',
+  'ArrayPrototypeUnshift',
+  // 'FunctionPrototypeCall' is omitted, since there's 'ReflectApply'
+  // and 'FunctionPrototypeApply'.
+  'MathHypot',
+  'MathMax',
+  'MathMin',
+  'StringPrototypeConcat',
+  'TypedArrayOf',
+];
+
+function getNewKey(key) {
+  return typeof key === 'symbol' ?
+    `Symbol${key.description[7].toUpperCase()}${key.description.slice(8)}` :
+    `${key[0].toUpperCase()}${key.slice(1)}`;
+}
+
+function copyAccessor(dest, prefix, key, { enumerable, get, set }) {
+  ReflectDefineProperty(dest, `${prefix}Get${key}`, {
+    value: uncurryThis(get),
+    enumerable
+  });
+  if (set !== undefined) {
+    ReflectDefineProperty(dest, `${prefix}Set${key}`, {
+      value: uncurryThis(set),
+      enumerable
+    });
+  }
+}
+
+function copyPropsRenamed(src, dest, prefix) {
+  for (const key of ReflectOwnKeys(src)) {
+    const newKey = getNewKey(key);
+    const desc = ReflectGetOwnPropertyDescriptor(src, key);
+    if ('get' in desc) {
+      copyAccessor(dest, prefix, newKey, desc);
+    } else {
+      const name = `${prefix}${newKey}`;
+      ReflectDefineProperty(dest, name, desc);
+      if (varargsMethods.includes(name)) {
+        ReflectDefineProperty(dest, `${name}Apply`, {
+          // `src` is bound as the `this` so that the static `this` points
+          // to the object it was defined on,
+          // e.g.: `ArrayOfApply` gets a `this` of `Array`:
+          value: applyBind(desc.value, src),
+        });
+      }
+    }
+  }
+}
+
+function copyPropsRenamedBound(src, dest, prefix) {
+  for (const key of ReflectOwnKeys(src)) {
+    const newKey = getNewKey(key);
+    const desc = ReflectGetOwnPropertyDescriptor(src, key);
+    if ('get' in desc) {
+      copyAccessor(dest, prefix, newKey, desc);
+    } else {
+      const { value } = desc;
+      if (typeof value === 'function') {
+        desc.value = value.bind(src);
+      }
+
+      const name = `${prefix}${newKey}`;
+      ReflectDefineProperty(dest, name, desc);
+      if (varargsMethods.includes(name)) {
+        ReflectDefineProperty(dest, `${name}Apply`, {
+          value: applyBind(value, src),
+        });
+      }
+    }
+  }
+}
+
+function copyPrototype(src, dest, prefix) {
+  for (const key of ReflectOwnKeys(src)) {
+    const newKey = getNewKey(key);
+    const desc = ReflectGetOwnPropertyDescriptor(src, key);
+    if ('get' in desc) {
+      copyAccessor(dest, prefix, newKey, desc);
+    } else {
+      const { value } = desc;
+      if (typeof value === 'function') {
+        desc.value = uncurryThis(value);
+      }
+
+      const name = `${prefix}${newKey}`;
+      ReflectDefineProperty(dest, name, desc);
+      if (varargsMethods.includes(name)) {
+        ReflectDefineProperty(dest, `${name}Apply`, {
+          value: applyBind(value),
+        });
+      }
+    }
+  }
+}
+
+// Create copies of configurable value properties of the global object
+[
+  'Proxy',
+  'globalThis',
+].forEach((name) => {
+  // eslint-disable-next-line no-restricted-globals
+  primordials[name] = globalThis[name];
+});
+
+// Create copies of URI handling functions
+[
+  decodeURI,
+  decodeURIComponent,
+  encodeURI,
+  encodeURIComponent,
+].forEach((fn) => {
+  primordials[fn.name] = fn;
+});
+
+// Create copies of the namespace objects
+[
+  'JSON',
+  'Math',
+  'Proxy',
+  'Reflect',
+].forEach((name) => {
+  // eslint-disable-next-line no-restricted-globals
+  copyPropsRenamed(global[name], primordials, name);
+});
+
+// Create copies of intrinsic objects
+[
+  'Array',
+  'ArrayBuffer',
+  'BigInt',
+  'BigInt64Array',
+  'BigUint64Array',
+  'Boolean',
+  'DataView',
+  'Date',
+  'Error',
+  'EvalError',
+  'Float32Array',
+  'Float64Array',
+  'Function',
+  'Int16Array',
+  'Int32Array',
+  'Int8Array',
+  'Map',
+  'Number',
+  'Object',
+  'RangeError',
+  'ReferenceError',
+  'RegExp',
+  'Set',
+  'String',
+  'Symbol',
+  'SyntaxError',
+  'TypeError',
+  'URIError',
+  'Uint16Array',
+  'Uint32Array',
+  'Uint8Array',
+  'Uint8ClampedArray',
+  'WeakMap',
+  'WeakSet',
+].forEach((name) => {
+  // eslint-disable-next-line no-restricted-globals
+  const original = global[name];
+  primordials[name] = original;
+  copyPropsRenamed(original, primordials, name);
+  copyPrototype(original.prototype, primordials, `${name}Prototype`);
+});
+
+// Create copies of intrinsic objects that require a valid `this` to call
+// static methods.
+// Refs: https://www.ecma-international.org/ecma-262/#sec-promise.all
+[
+  'Promise',
+].forEach((name) => {
+  // eslint-disable-next-line no-restricted-globals
+  const original = global[name];
+  primordials[name] = original;
+  copyPropsRenamedBound(original, primordials, name);
+  copyPrototype(original.prototype, primordials, `${name}Prototype`);
+});
+
+// Create copies of abstract intrinsic objects that are not directly exposed
+// on the global object.
+// Refs: https://tc39.es/ecma262/#sec-%typedarray%-intrinsic-object
+[
+  { name: 'TypedArray', original: Reflect.getPrototypeOf(Uint8Array) },
+  { name: 'ArrayIterator', original: {
+    prototype: Reflect.getPrototypeOf(Array.prototype[Symbol.iterator]()),
+  } },
+  { name: 'StringIterator', original: {
+    prototype: Reflect.getPrototypeOf(String.prototype[Symbol.iterator]()),
+  } },
+].forEach(({ name, original }) => {
+  primordials[name] = original;
+  // The static %TypedArray% methods require a valid `this`, but can't be bound,
+  // as they need a subclass constructor as the receiver:
+  copyPrototype(original, primordials, name);
+  copyPrototype(original.prototype, primordials, `${name}Prototype`);
+});
+
+/* eslint-enable node-core/prefer-primordials */
+
+const {
+  ArrayPrototypeForEach,
+  FunctionPrototypeCall,
+  Map,
+  ObjectFreeze,
+  ObjectSetPrototypeOf,
+  Set,
+  SymbolIterator,
+  WeakMap,
+  WeakSet,
+} = primordials;
+
+// Because these functions are used by `makeSafe`, which is exposed
+// on the `primordials` object, it's important to use const references
+// to the primordials that they use:
+const createSafeIterator = (factory, next) => {
+  class SafeIterator {
+    constructor(iterable) {
+      this._iterator = factory(iterable);
+    }
+    next() {
+      return next(this._iterator);
+    }
+    [SymbolIterator]() {
+      return this;
+    }
+  }
+  ObjectSetPrototypeOf(SafeIterator.prototype, null);
+  ObjectFreeze(SafeIterator.prototype);
+  ObjectFreeze(SafeIterator);
+  return SafeIterator;
+};
+
+primordials.SafeArrayIterator = createSafeIterator(
+  primordials.ArrayPrototypeSymbolIterator,
+  primordials.ArrayIteratorPrototypeNext
+);
+primordials.SafeStringIterator = createSafeIterator(
+  primordials.StringPrototypeSymbolIterator,
+  primordials.StringIteratorPrototypeNext
+);
+
+const copyProps = (src, dest) => {
+  ArrayPrototypeForEach(ReflectOwnKeys(src), (key) => {
+    if (!ReflectGetOwnPropertyDescriptor(dest, key)) {
+      ReflectDefineProperty(
+        dest,
+        key,
+        ReflectGetOwnPropertyDescriptor(src, key));
+    }
+  });
+};
+
+const makeSafe = (unsafe, safe) => {
+  if (SymbolIterator in unsafe.prototype) {
+    const dummy = new unsafe();
+    let next; // We can reuse the same `next` method.
+
+    ArrayPrototypeForEach(ReflectOwnKeys(unsafe.prototype), (key) => {
+      if (!ReflectGetOwnPropertyDescriptor(safe.prototype, key)) {
+        const desc = ReflectGetOwnPropertyDescriptor(unsafe.prototype, key);
+        if (
+          typeof desc.value === 'function' &&
+          desc.value.length === 0 &&
+          SymbolIterator in (FunctionPrototypeCall(desc.value, dummy) ?? {})
+        ) {
+          const createIterator = uncurryThis(desc.value);
+          next = next ?? uncurryThis(createIterator(dummy).next);
+          const SafeIterator = createSafeIterator(createIterator, next);
+          desc.value = function() {
+            return new SafeIterator(this);
+          };
+        }
+        ReflectDefineProperty(safe.prototype, key, desc);
+      }
+    });
+  } else {
+    copyProps(unsafe.prototype, safe.prototype);
+  }
+  copyProps(unsafe, safe);
+
+  ObjectSetPrototypeOf(safe.prototype, null);
+  ObjectFreeze(safe.prototype);
+  ObjectFreeze(safe);
+  return safe;
+};
+primordials.makeSafe = makeSafe;
+
+// Subclass the constructors because we need to use their prototype
+// methods later.
+// Defining the `constructor` is necessary here to avoid the default
+// constructor which uses the user-mutable `%ArrayIteratorPrototype%.next`.
+primordials.SafeMap = makeSafe(
+  Map,
+  class SafeMap extends Map {
+    constructor(i) { super(i); } // eslint-disable-line no-useless-constructor
+  }
+);
+primordials.SafeWeakMap = makeSafe(
+  WeakMap,
+  class SafeWeakMap extends WeakMap {
+    constructor(i) { super(i); } // eslint-disable-line no-useless-constructor
+  }
+);
+primordials.SafeSet = makeSafe(
+  Set,
+  class SafeSet extends Set {
+    constructor(i) { super(i); } // eslint-disable-line no-useless-constructor
+  }
+);
+primordials.SafeWeakSet = makeSafe(
+  WeakSet,
+  class SafeWeakSet extends WeakSet {
+    constructor(i) { super(i); } // eslint-disable-line no-useless-constructor
+  }
+);
+
+ObjectSetPrototypeOf(primordials, null);
+ObjectFreeze(primordials);
+
+module.exports = primordials;
+
+
+/***/ }),
+
+/***/ 895:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+// This is a placeholder for util.js in node.js land.
+
+const {
+  ObjectCreate,
+  ObjectFreeze,
+} = __nccwpck_require__(3720);
+
+const kEmptyObject = ObjectFreeze(ObjectCreate(null));
+
+module.exports = {
+  kEmptyObject,
+};
+
+
+/***/ }),
+
+/***/ 8168:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+// This file is a proxy of the original file located at:
+// https://github.com/nodejs/node/blob/main/lib/internal/validators.js
+// Every addition or modification to this file must be evaluated
+// during the PR review.
+
+const {
+  ArrayIsArray,
+  ArrayPrototypeIncludes,
+  ArrayPrototypeJoin,
+} = __nccwpck_require__(3720);
+
+const {
+  codes: {
+    ERR_INVALID_ARG_TYPE
+  }
+} = __nccwpck_require__(8509);
+
+function validateString(value, name) {
+  if (typeof value !== 'string') {
+    throw new ERR_INVALID_ARG_TYPE(name, 'String', value);
+  }
+}
+
+function validateUnion(value, name, union) {
+  if (!ArrayPrototypeIncludes(union, value)) {
+    throw new ERR_INVALID_ARG_TYPE(name, `('${ArrayPrototypeJoin(union, '|')}')`, value);
+  }
+}
+
+function validateBoolean(value, name) {
+  if (typeof value !== 'boolean') {
+    throw new ERR_INVALID_ARG_TYPE(name, 'Boolean', value);
+  }
+}
+
+function validateArray(value, name) {
+  if (!ArrayIsArray(value)) {
+    throw new ERR_INVALID_ARG_TYPE(name, 'Array', value);
+  }
+}
+
+function validateStringArray(value, name) {
+  validateArray(value, name);
+  for (let i = 0; i < value.length; i++) {
+    validateString(value[i], `${name}[${i}]`);
+  }
+}
+
+function validateBooleanArray(value, name) {
+  validateArray(value, name);
+  for (let i = 0; i < value.length; i++) {
+    validateBoolean(value[i], `${name}[${i}]`);
+  }
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} name
+ * @param {{
+ *   allowArray?: boolean,
+ *   allowFunction?: boolean,
+ *   nullable?: boolean
+ * }} [options]
+ */
+function validateObject(value, name, options) {
+  const useDefaultOptions = options == null;
+  const allowArray = useDefaultOptions ? false : options.allowArray;
+  const allowFunction = useDefaultOptions ? false : options.allowFunction;
+  const nullable = useDefaultOptions ? false : options.nullable;
+  if ((!nullable && value === null) ||
+      (!allowArray && ArrayIsArray(value)) ||
+      (typeof value !== 'object' && (
+        !allowFunction || typeof value !== 'function'
+      ))) {
+    throw new ERR_INVALID_ARG_TYPE(name, 'Object', value);
+  }
+}
+
+module.exports = {
+  validateArray,
+  validateObject,
+  validateString,
+  validateStringArray,
+  validateUnion,
+  validateBoolean,
+  validateBooleanArray,
+};
+
+
+/***/ }),
+
+/***/ 3115:
+/***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
+
+"use strict";
+
+
+const {
+  ArrayPrototypeFind,
+  ObjectEntries,
+  ObjectPrototypeHasOwnProperty: ObjectHasOwn,
+  StringPrototypeCharAt,
+  StringPrototypeIncludes,
+  StringPrototypeStartsWith,
+} = __nccwpck_require__(3720);
+
+const {
+  validateObject,
+} = __nccwpck_require__(8168);
+
+// These are internal utilities to make the parsing logic easier to read, and
+// add lots of detail for the curious. They are in a separate file to allow
+// unit testing, although that is not essential (this could be rolled into
+// main file and just tested implicitly via API).
+//
+// These routines are for internal use, not for export to client.
+
+/**
+ * Return the named property, but only if it is an own property.
+ */
+function objectGetOwn(obj, prop) {
+  if (ObjectHasOwn(obj, prop))
+    return obj[prop];
+}
+
+/**
+ * Return the named options property, but only if it is an own property.
+ */
+function optionsGetOwn(options, longOption, prop) {
+  if (ObjectHasOwn(options, longOption))
+    return objectGetOwn(options[longOption], prop);
+}
+
+/**
+ * Determines if the argument may be used as an option value.
+ * @example
+ * isOptionValue('V') // returns true
+ * isOptionValue('-v') // returns true (greedy)
+ * isOptionValue('--foo') // returns true (greedy)
+ * isOptionValue(undefined) // returns false
+ */
+function isOptionValue(value) {
+  if (value == null) return false;
+
+  // Open Group Utility Conventions are that an option-argument
+  // is the argument after the option, and may start with a dash.
+  return true; // greedy!
+}
+
+/**
+ * Detect whether there is possible confusion and user may have omitted
+ * the option argument, like `--port --verbose` when `port` of type:string.
+ * In strict mode we throw errors if value is option-like.
+ */
+function isOptionLikeValue(value) {
+  if (value == null) return false;
+
+  return value.length > 1 && StringPrototypeCharAt(value, 0) === '-';
+}
+
+/**
+ * Determines if `arg` is just a short option.
+ * @example '-f'
+ */
+function isLoneShortOption(arg) {
+  return arg.length === 2 &&
+    StringPrototypeCharAt(arg, 0) === '-' &&
+    StringPrototypeCharAt(arg, 1) !== '-';
+}
+
+/**
+ * Determines if `arg` is a lone long option.
+ * @example
+ * isLoneLongOption('a') // returns false
+ * isLoneLongOption('-a') // returns false
+ * isLoneLongOption('--foo') // returns true
+ * isLoneLongOption('--foo=bar') // returns false
+ */
+function isLoneLongOption(arg) {
+  return arg.length > 2 &&
+    StringPrototypeStartsWith(arg, '--') &&
+    !StringPrototypeIncludes(arg, '=', 3);
+}
+
+/**
+ * Determines if `arg` is a long option and value in the same argument.
+ * @example
+ * isLongOptionAndValue('--foo') // returns false
+ * isLongOptionAndValue('--foo=bar') // returns true
+ */
+function isLongOptionAndValue(arg) {
+  return arg.length > 2 &&
+    StringPrototypeStartsWith(arg, '--') &&
+    StringPrototypeIncludes(arg, '=', 3);
+}
+
+/**
+ * Determines if `arg` is a short option group.
+ *
+ * See Guideline 5 of the [Open Group Utility Conventions](https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap12.html).
+ *   One or more options without option-arguments, followed by at most one
+ *   option that takes an option-argument, should be accepted when grouped
+ *   behind one '-' delimiter.
+ * @example
+ * isShortOptionGroup('-a', {}) // returns false
+ * isShortOptionGroup('-ab', {}) // returns true
+ * // -fb is an option and a value, not a short option group
+ * isShortOptionGroup('-fb', {
+ *   options: { f: { type: 'string' } }
+ * }) // returns false
+ * isShortOptionGroup('-bf', {
+ *   options: { f: { type: 'string' } }
+ * }) // returns true
+ * // -bfb is an edge case, return true and caller sorts it out
+ * isShortOptionGroup('-bfb', {
+ *   options: { f: { type: 'string' } }
+ * }) // returns true
+ */
+function isShortOptionGroup(arg, options) {
+  if (arg.length <= 2) return false;
+  if (StringPrototypeCharAt(arg, 0) !== '-') return false;
+  if (StringPrototypeCharAt(arg, 1) === '-') return false;
+
+  const firstShort = StringPrototypeCharAt(arg, 1);
+  const longOption = findLongOptionForShort(firstShort, options);
+  return optionsGetOwn(options, longOption, 'type') !== 'string';
+}
+
+/**
+ * Determine if arg is a short string option followed by its value.
+ * @example
+ * isShortOptionAndValue('-a', {}); // returns false
+ * isShortOptionAndValue('-ab', {}); // returns false
+ * isShortOptionAndValue('-fFILE', {
+ *   options: { foo: { short: 'f', type: 'string' }}
+ * }) // returns true
+ */
+function isShortOptionAndValue(arg, options) {
+  validateObject(options, 'options');
+
+  if (arg.length <= 2) return false;
+  if (StringPrototypeCharAt(arg, 0) !== '-') return false;
+  if (StringPrototypeCharAt(arg, 1) === '-') return false;
+
+  const shortOption = StringPrototypeCharAt(arg, 1);
+  const longOption = findLongOptionForShort(shortOption, options);
+  return optionsGetOwn(options, longOption, 'type') === 'string';
+}
+
+/**
+ * Find the long option associated with a short option. Looks for a configured
+ * `short` and returns the short option itself if a long option is not found.
+ * @example
+ * findLongOptionForShort('a', {}) // returns 'a'
+ * findLongOptionForShort('b', {
+ *   options: { bar: { short: 'b' } }
+ * }) // returns 'bar'
+ */
+function findLongOptionForShort(shortOption, options) {
+  validateObject(options, 'options');
+  const longOptionEntry = ArrayPrototypeFind(
+    ObjectEntries(options),
+    ({ 1: optionConfig }) => objectGetOwn(optionConfig, 'short') === shortOption
+  );
+  return longOptionEntry?.[0] ?? shortOption;
+}
+
+/**
+ * Check if the given option includes a default value
+ * and that option has not been set by the input args.
+ *
+ * @param {string} longOption - long option name e.g. 'foo'
+ * @param {object} optionConfig - the option configuration properties
+ * @param {object} values - option values returned in `values` by parseArgs
+ */
+function useDefaultValueOption(longOption, optionConfig, values) {
+  return objectGetOwn(optionConfig, 'default') !== undefined &&
+    values[longOption] === undefined;
+}
+
+module.exports = {
+  findLongOptionForShort,
+  isLoneLongOption,
+  isLoneShortOption,
+  isLongOptionAndValue,
+  isOptionValue,
+  isOptionLikeValue,
+  isShortOptionAndValue,
+  isShortOptionGroup,
+  useDefaultValueOption,
+  objectGetOwn,
+  optionsGetOwn,
+};
+
+
+/***/ }),
+
 /***/ 4294:
 /***/ ((module, __unused_webpack_exports, __nccwpck_require__) => {
 
@@ -10539,14 +11724,6 @@ module.exports = require("net");
 
 /***/ }),
 
-/***/ 9147:
-/***/ ((module) => {
-
-"use strict";
-module.exports = require("node:util");
-
-/***/ }),
-
 /***/ 2087:
 /***/ ((module) => {
 
@@ -10654,7 +11831,7 @@ var __webpack_exports__ = {};
 (() => {
 const github = __nccwpck_require__(4947);
 const core = __nccwpck_require__(2186);
-const { parseArgs } = __nccwpck_require__(9147);
+const { parseArgs } = __nccwpck_require__(290)
 
 // most @actions toolkit packages have async methods
 async function run() {

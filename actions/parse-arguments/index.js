@@ -1,6 +1,6 @@
 const github = require('@actions/github');
 const core = require('@actions/core');
-const { parseArgs } = require('node:util');
+const { parseArgs } = require('@pkgjs/parseargs')
 
 // most @actions toolkit packages have async methods
 async function run() {
