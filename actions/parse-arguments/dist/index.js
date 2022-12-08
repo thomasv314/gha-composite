@@ -11861,23 +11861,27 @@ async function run() {
       issue_number,
     });
 
-//    console.log(JSON.stringify(comments, null, 4))
-
-    console.log("USING OPTIONS", commandOpts)
+    let lastMatch;
 
     for (var i = 0; i < comments.length; i++) {
-      const body = comments[i]["body"].replace(/(\r\n|\n|\r)/gm, "")
-      const created = comments[i]["created_at"]
-      if (body.startsWith(commandPrefix)) {
-        const args = body.replace(commandPrefix, "").split(" ")
-        const { values, positionals } = parseArgs({ args, options: commandOpts, allowPositionals: true });
-        console.log("COMMENT STARTS WITH:", body, created)
-        console.log(`ARGS:  ${args}`)
-        console.log("VALUES", values, "POSITIONALS", positionals)
-      } else {
-        console.log("COMMENT DOESNT START WITH PREFIX", body, created)
+      if (comments[i]["body"].startsWith(commandPrefix)) {
+        lastMatch = comments[i]
       }
-      console.log("---")
+    }
+
+    if (lastMatch) {
+      const created = lastMatch["created_at"]
+
+      // Remove newlines from the matching comment body
+      const body = lastMatch["body"].replace(/(\r\n|\n|\r)/gm, "")
+
+      // Remove the prefix and split by spaces to parse the arguments
+      const args = body.replace(commandPrefix, "").split(" ")
+
+      const { values, positionals } = parseArgs({ args, options: commandOpts, allowPositionals: true });
+      console.log("COMMENT STARTS WITH:", body, created)
+      console.log(`ARGS:  ${args}`)
+      console.log("VALUES", values, "POSITIONALS", positionals)
     }
   } catch (error) {
     core.setFailed(error.message);
