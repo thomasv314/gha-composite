@@ -11881,7 +11881,7 @@ async function run() {
       const { values, positionals } = parseArgs({ args, options: commandOpts, allowPositionals: true });
       console.log("COMMENT STARTS WITH:", body, created)
       console.log(`ARGS:  ${args}`)
-      console.log("VALUES", values, "POSITIONALS", positionals)
+      console.log("VALUES", JSON.stringify(values), "POSITIONALS", positionals)
     } else {
       console.log(`Searched ${comments.length} comments and found no strings starting with ${commandPrefix}`)
     }
